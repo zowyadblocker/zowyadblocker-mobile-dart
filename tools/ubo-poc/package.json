@@ -1,0 +1,1 @@
+{"name":"zowy-ubo-proof","private":true,"type":"module","scripts":{"test":"node proof.mjs"},"dependencies":{"@gorhill/ubo-core":"0.1.30"}}

@@ -1,0 +1,8 @@
+PASS IPv4 UDP blocked.zowy.test RCODE=3 bytes=35
+PASS IPv4 UDP example.com RCODE=0 bytes=61
+PASS IPv4 TCP blocked.zowy.test RCODE=3 bytes=35
+PASS IPv4 TCP example.com RCODE=0 bytes=61
+PASS IPv6 UDP blocked.zowy.test RCODE=3 bytes=35
+PASS IPv6 UDP example.com RCODE=0 bytes=61
+PASS IPv6 TCP blocked.zowy.test RCODE=3 bytes=35
+PASS IPv6 TCP example.com RCODE=0 bytes=61

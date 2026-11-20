@@ -1,0 +1,91 @@
+{
+  "package": "@gorhill/ubo-core@0.1.30",
+  "runtime": "v26.13.0",
+  "platform": "win32/x64",
+  "compileMs": 7.448100000000004,
+  "match100kMs": 36.50760000000001,
+  "serializedBytes": 987,
+  "before": {
+    "rss": 46923776,
+    "heapTotal": 12734464,
+    "heapUsed": 8779200,
+    "external": 4833978,
+    "arrayBuffers": 2440727
+  },
+  "after": {
+    "rss": 57602048,
+    "heapTotal": 19025920,
+    "heapUsed": 11901432,
+    "external": 3261154,
+    "arrayBuffers": 867863
+  },
+  "results": [
+    {
+      "url": "https://ads.example/a",
+      "originURL": "https://site.example/",
+      "type": "script",
+      "actual": 1,
+      "explanation": {
+        "result": 1,
+        "source": "static",
+        "tokenHash": 268435456,
+        "raw": "||ads.example^",
+        "regex": "ads\\.example\\.?(?:[^%.0-9a-z_-]|$)"
+      }
+    },
+    {
+      "url": "https://allowed.ads.example/a",
+      "originURL": "https://site.example/",
+      "type": "script",
+      "actual": 2,
+      "explanation": {
+        "result": 2,
+        "source": "static",
+        "tokenHash": 268435456,
+        "raw": "@@||allowed.ads.example^",
+        "regex": "allowed\\.ads\\.example\\.?(?:[^%.0-9a-z_-]|$)"
+      }
+    },
+    {
+      "url": "https://content.example/a",
+      "originURL": "https://site.example/",
+      "type": "script",
+      "actual": 0,
+      "explanation": null
+    },
+    {
+      "url": "https://example.org/banner.js",
+      "originURL": "https://site.example/",
+      "type": "script",
+      "actual": 1,
+      "explanation": {
+        "result": 1,
+        "source": "static",
+        "tokenHash": 34909755,
+        "raw": "||example.org/banner.js$script,3p",
+        "regex": "example\\.org/banner\\.js"
+      }
+    },
+    {
+      "url": "https://example.org/banner.js",
+      "originURL": "https://example.org/",
+      "type": "script",
+      "actual": 0,
+      "explanation": null
+    },
+    {
+      "url": "https://important.example/",
+      "originURL": "https://site.example/",
+      "type": "script",
+      "actual": 1,
+      "explanation": {
+        "result": 1,
+        "source": "static",
+        "tokenHash": 27596899,
+        "raw": "||important.example^$important",
+        "regex": "important\\.example\\.?(?:[^%.0-9a-z_-]|$)"
+      }
+    }
+  ],
+  "limitation": "Desktop Node proof only. No Android or QuickJS embedding/performance claim."
+}

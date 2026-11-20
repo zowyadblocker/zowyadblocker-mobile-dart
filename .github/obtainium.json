@@ -1,0 +1,9 @@
+{
+  "id": "dev.zowy.zowy_adblocker",
+  "url": "https://github.com/zowyadblocker/zowyadblocker-mobile-dart",
+  "author": "zowyadblocker",
+  "name": "Zowy",
+  "additionalSettings": {
+    "apkFilterRegEx": "universal.*\\.apk$"
+  }
+}
