@@ -320,7 +320,7 @@ class HomePage extends StatelessWidget {
             children: [
               heading('Start with a filter list'),
               muted(
-                'Download the optional HaGeZi list or add your own rules. No filter data is bundled.',
+                'Tap the power button to download the enabled HaGeZi list and start protection, or choose your own lists and rules in Filters. Internet access is needed for the first download.',
               ),
               gap(),
               FilledButton.icon(

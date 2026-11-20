@@ -1,12 +1,12 @@
 # Zowy Adblocker
 
-[Download version 0.1.0](https://github.com/zowyadblocker/zowyadblocker-mobile-dart/releases/tag/v0.1.0) · [Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522dev.zowy.zowy_adblocker%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Fzowyadblocker%252Fzowyadblocker-mobile-dart%2522%252C%2522author%2522%253A%2522zowyadblocker%2522%252C%2522name%2522%253A%2522Zowy%2522%252C%2522additionalSettings%2522%253A%257B%2522apkFilterRegEx%2522%253A%2522universal.%252A%255C%255C.apk%2524%2522%257D%257D) · [Obtainium setup](.github/OBTAINIUM.md)
+[Download the latest version](https://github.com/zowyadblocker/zowyadblocker-mobile-dart/releases/latest) · [Add to Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522dev.zowy.zowy_adblocker%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Fzowyadblocker%252Fzowyadblocker-mobile-dart%2522%252C%2522author%2522%253A%2522zowyadblocker%2522%252C%2522name%2522%253A%2522Zowy%2522%252C%2522additionalSettings%2522%253A%257B%2522apkFilterRegEx%2522%253A%2522universal.%252A%255C%255C.apk%2524%2522%257D%257D) · [Obtainium setup](.github/OBTAINIUM.md)
 
 
 An Android-only Flutter application for local DNS ad/tracker filtering. AMOLED
 black, purple accents, no account, no analytics and no remote VPN server.
 
-**Status: functional development build (0.1.0), not the completed production
+**Status: functional development build (0.2.0), not the completed production
 specification.** The DNS VPN is implemented; official uBlock core is currently a
 tested desktop proof, root is an authorized diagnostic, and Shizuku supplies
 capability diagnostics. Unsupported modes are never presented as active protection.
@@ -58,16 +58,19 @@ and device checks are recorded in [verification](docs/VERIFICATION.md).
 
 ## First use
 
-1. Open **Filters** and tap **Update lists** to download the optional HaGeZi
-   NORMAL list, or add your own rules. No list is bundled or downloaded on launch.
-2. Inspect rule counts and unsupported syntax. The Android engine only enforces
-   its [documented DNS subset](docs/ENGINE_RESEARCH.md).
-3. Open **Settings → Upstream DNS**. Cloudflare DoH is the default; selecting it
-   means allowed DNS queries go to Cloudflare. Choose another preset or configure
-   a bootstrap IP, TLS hostname, transport and path. **Test resolver** checks the
-   actual upstream. TLS verification is never bypassed.
-4. Tap the protection button and approve Android's VPN permission prompt. The UI
-   shows active only after the headless engine and real TUN interface start.
+1. Tap the **power button**. On first use, Zowy downloads the enabled HaGeZi
+   NORMAL list, then continues to VPN setup. Internet access is needed for this
+   download; a failed download can be retried with the same button. To choose
+   other lists or custom rules first, open **Filters**. Nothing downloads merely
+   from opening the app.
+2. Approve Android's VPN permission prompt. The UI shows active only after the
+   headless engine and real TUN interface start.
+3. Inspect rule counts and unsupported syntax in **Filters**. The Android engine
+   only enforces its [documented DNS subset](docs/ENGINE_RESEARCH.md).
+4. Optional: open **Settings → Upstream DNS** to change the default Cloudflare
+   DoH resolver. Allowed DNS queries go to Cloudflare unless you choose another
+   preset or configure a bootstrap IP, TLS hostname, transport and path.
+   **Test resolver** checks the actual upstream. TLS verification is never bypassed.
 5. If Android Private DNS or a browser's encrypted DNS is active, it may bypass
    local filtering. Zowy reports detected conflicts and leaves system settings
    under your control. Starting Zowy replaces another active VPN.
@@ -150,8 +153,7 @@ The GitHub Actions workflow formats, analyzes, tests, runs the official-core pro
 audits npm dependencies, builds a debug APK and uploads checksums. Release signing
 is optional and secrets stay in repository settings. Matching version tags publish
 signed releases once the four signing secrets are configured; see the
-[release workflow guide](.github/RELEASING.md). Version 0.1.0 ships the locally
-tested development APKs. F-Droid acceptance and
+[release workflow guide](.github/RELEASING.md). Current APK downloads are locally built development builds. F-Droid acceptance and
 production distribution have not been verified.
 
 Licensed **GPL-3.0-or-later**; see [LICENSE](LICENSE). Preserve third-party notices

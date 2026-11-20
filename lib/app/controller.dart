@@ -106,6 +106,12 @@ class AppController extends ChangeNotifier {
     if (running || snapshot['status'] == 'starting') {
       await platform.call<void>('stop');
     } else {
+      if (engine.size == 0 && config.sources.any((s) => s.enabled)) {
+        notice = 'Downloading filter lists before starting protection…';
+        notifyListeners();
+        await _updateLists(force: false);
+        notice = null;
+      }
       if (engine.size == 0) {
         throw StateError(
           'Download a filter list or add custom rules before enabling protection.',
@@ -116,6 +122,12 @@ class AppController extends ChangeNotifier {
     }
   });
   Future<void> updateLists({bool force = true}) => run(() async {
+    await _updateLists(force: force);
+    notice =
+        'Filter lists updated. Previous versions were retained on failure.';
+  });
+
+  Future<void> _updateLists({required bool force}) async {
     final failures = <String>[];
     for (final source in config.sources.where((s) => s.enabled)) {
       try {
@@ -125,10 +137,15 @@ class AppController extends ChangeNotifier {
       }
     }
     await save();
-    if (failures.isNotEmpty) throw StateError(failures.join('\n'));
-    notice =
-        'Filter lists updated. Previous versions were retained on failure.';
-  });
+    if (failures.isNotEmpty) {
+      notice = null;
+      throw StateError(
+        'Could not download filter lists. Check your connection and try again.\n'
+        '${failures.join('\n')}',
+      );
+    }
+  }
+
   Future<void> testResolver() => run(() async {
     final resolver = DnsResolver(config.upstream);
     final watch = Stopwatch()..start();

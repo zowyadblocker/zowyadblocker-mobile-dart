@@ -13,7 +13,7 @@ The import configuration is [obtainium.json](obtainium.json). If adding manually
 set the APK filename filter to `universal.*\.apk$` or consistently choose your
 phone's ABI. No account or secret is included in the configuration.
 
-Version 0.1.0 is a development build signed with a debug certificate. Android
+The 0.1.0 and 0.2.0 development APKs use the same debug signing certificate. Android
 requires the same signing certificate for future in-place updates. A later switch
 to another production key requires uninstalling first; export settings beforehand.
 
