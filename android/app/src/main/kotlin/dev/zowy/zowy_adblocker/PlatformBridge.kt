@@ -112,7 +112,12 @@ class MainActivity : FlutterActivity() {
                             } else { startProtection(); result.success(null) }
                         }
                         "stop" -> {
-                            DnsVpnService.instance?.stopProtection()
+                            val service = DnsVpnService.instance
+                            if (service != null) service.stopProtection()
+                            else {
+                                stopService(Intent(this, DnsVpnService::class.java))
+                                ProtectionState.set("stopped")
+                            }
                             result.success(null)
                         }
                         "snapshot" -> result.success(ProtectionState.json())
@@ -125,6 +130,7 @@ class MainActivity : FlutterActivity() {
                         }
                         "capabilities" -> result.success(capabilities())
                         "vpnSettings" -> { startActivity(Intent(Settings.ACTION_VPN_SETTINGS)); result.success(null) }
+                        "batterySettings" -> { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)); result.success(null) }
                         "privateDnsSettings" -> { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)); result.success(null) }
                         "shizukuPermission" -> {
                             check(Shizuku.pingBinder()) { "Start the Shizuku server first" }

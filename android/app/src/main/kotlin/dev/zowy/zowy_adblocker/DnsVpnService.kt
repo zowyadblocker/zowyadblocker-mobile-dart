@@ -11,6 +11,10 @@ import android.net.Network
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
+import android.system.StructPollfd
 import io.flutter.FlutterInjector
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.dart.DartExecutor
@@ -18,8 +22,6 @@ import io.flutter.plugin.common.BasicMessageChannel
 import io.flutter.plugin.common.BinaryCodec
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.Semaphore
 import kotlin.concurrent.thread
@@ -32,8 +34,8 @@ class DnsVpnService : VpnService() {
     @Volatile private var running = false
     private val main = Handler(Looper.getMainLooper())
     private var reader: Thread? = null
-    private var input: FileInputStream? = null
-    private var output: FileOutputStream? = null
+    private var readerWake: ParcelFileDescriptor? = null
+    private var stopping = false
     private val slots = Semaphore(64)
     private var currentNetwork: Network? = null
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -57,11 +59,12 @@ class DnsVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") { stopProtection(); return START_NOT_STICKY }
+        if (stopping) return START_NOT_STICKY
         if (engine != null) return START_STICKY
         ProtectionState.set("starting")
-        startForeground(201, notification("Starting local DNS protection"))
-        main.postDelayed(startupTimeout, 30000)
         try {
+            startForeground(201, notification("Starting local DNS protection"))
+            main.postDelayed(startupTimeout, 30000)
             val loader = FlutterInjector.instance().flutterLoader()
             loader.startInitialization(applicationContext)
             loader.ensureInitializationComplete(applicationContext, null)
@@ -73,18 +76,24 @@ class DnsVpnService : VpnService() {
                     when (call.method) {
                         "loadConfig" -> result.success(readConfiguration())
                         "dataPath" -> result.success(filesDir.absolutePath)
-                        "ready" -> { establishTunnel(); result.success(null) }
+                        "ready" -> { if (!stopping && !running) establishTunnel(); result.success(null) }
                         "fatal" -> { result.success(null); fail(call.arguments.toString()) }
                         "snapshot" -> {
-                            ProtectionState.snapshot = JSONObject(call.arguments as String)
-                            ProtectionState.emit(); result.success(null)
+                            if (!stopping) {
+                                ProtectionState.snapshot = JSONObject(call.arguments as String)
+                                ProtectionState.emit()
+                            }
+                            result.success(null)
                         }
                         else -> result.notImplemented()
                     }
                 } catch (e: Exception) { result.error("SERVICE", e.message, null); fail(e.message ?: "VPN error") }
             }
             flutter.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint(loader.findAppBundlePath(), "package:zowy_adblocker/main.dart", "vpnMain"))
-        } catch (e: Exception) { fail(e.message ?: "Cannot start DNS engine") }
+        } catch (e: Exception) {
+            fail(e.message ?: "Cannot start DNS engine")
+            return START_NOT_STICKY
+        }
         return START_STICKY
     }
 
@@ -94,7 +103,7 @@ class DnsVpnService : VpnService() {
             .addAddress("10.111.0.2", 32).addAddress("fd00:111::2", 128)
             .addDnsServer("10.111.0.1").addDnsServer("fd00:111::1")
             .addRoute("10.111.0.1", 32).addRoute("fd00:111::1", 128)
-            .setMtu(1500).setBlocking(true).setMetered(false)
+            .setMtu(1500).setBlocking(false).setMetered(false)
         builder.addDisallowedApplication(packageName)
         val excluded = config.optJSONArray("excludedApps")
         for (i in 0 until (excluded?.length() ?: 0)) {
@@ -104,42 +113,49 @@ class DnsVpnService : VpnService() {
                 catch (_: android.content.pm.PackageManager.NameNotFoundException) { /* App uninstalled since configuration. */ }
             }
         }
-        tunnel = builder.establish() ?: error("VPN permission was revoked")
-        input = FileInputStream(tunnel!!.fileDescriptor)
-        output = FileOutputStream(tunnel!!.fileDescriptor)
-        running = true
+        val device = builder.establish() ?: error("VPN permission was revoked")
+        tunnel = device
+        val fd = device.fileDescriptor
         val packets = BasicMessageChannel(engine!!.dartExecutor.binaryMessenger, "dev.zowy/packets", BinaryCodec.INSTANCE)
+        val (wakeRead, wakeWrite) = ParcelFileDescriptor.createPipe()
+        readerWake = wakeWrite
+        running = true
         packets.setMessageHandler { packet, reply ->
-            try {
-                if (running && packet != null) {
-                    val bytes = ByteArray(packet.remaining()); packet.get(bytes); output?.write(bytes)
-                }
-                reply.reply(null)
-            } catch (e: Exception) { reply.reply(null); if (running) fail(e.message ?: "TCP TUN write failed") }
+            writePacket(packet)
+            reply.reply(null)
         }
         reader = thread(name = "zowy-tun") {
-            val buffer = ByteArray(65535)
-            try {
-                while (running) {
-                    slots.acquire()
-                    val n = input!!.read(buffer)
-                    if (n <= 0) { slots.release(); break }
-                    val packet = ByteBuffer.allocateDirect(n).put(buffer, 0, n)
-                    main.post {
-                        if (!running) { slots.release(); return@post }
-                        packets.send(packet) { reply ->
-                            try {
-                                if (running && reply != null) {
-                                    val bytes = ByteArray(reply.remaining()); reply.get(bytes)
-                                    output?.write(bytes)
-                                }
-                            } catch (e: Exception) { if (running) fail(e.message ?: "TUN write failed") }
-                            finally { slots.release() }
+            wakeRead.use {
+                val buffer = ByteArray(65535)
+                val readable = OsConstants.POLLIN.toShort()
+                val tunPoll = StructPollfd().apply { this.fd = fd; events = readable }
+                val stopPoll = StructPollfd().apply { this.fd = wakeRead.fileDescriptor; events = readable }
+                val poll = arrayOf(tunPoll, stopPoll)
+                try {
+                    while (running) {
+                        Os.poll(poll, -1)
+                        if (!running || stopPoll.revents.toInt() != 0) break
+                        if (tunPoll.revents != readable) error("VPN tunnel closed unexpectedly")
+                        val n = try { Os.read(fd, buffer, 0, buffer.size) }
+                        catch (e: ErrnoException) {
+                            if (e.errno == OsConstants.EAGAIN) continue
+                            throw e
+                        }
+                        if (n <= 0) error("VPN tunnel closed unexpectedly")
+                        slots.acquire()
+                        val packet = ByteBuffer.allocateDirect(n).put(buffer, 0, n)
+                        main.post {
+                            if (!running) { slots.release(); return@post }
+                            packets.send(packet) { reply ->
+                                try { writePacket(reply) }
+                                finally { slots.release() }
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    if (running) main.post { if (running) fail(e.message ?: "TUN read failed") }
                 }
-                if (running) main.post { fail("VPN tunnel closed unexpectedly") }
-            } catch (e: Exception) { if (running) main.post { fail(e.message ?: "TUN read failed") } }
+            }
         }
         main.removeCallbacks(startupTimeout)
         ProtectionState.set("running")
@@ -167,26 +183,69 @@ class DnsVpnService : VpnService() {
             override fun notImplemented() {}
         })
     }
-    fun command(name: String) { channel?.invokeMethod(name, null) }
-    private fun fail(message: String) { ProtectionState.set("error", message); stopSelf() }
-    fun stopProtection() { ProtectionState.set("stopped"); stopSelf() }
-    override fun onRevoke() { ProtectionState.set("stopped", "Android revoked VPN permission or another VPN replaced Zowy"); stopSelf() }
+    private fun writePacket(packet: ByteBuffer?) {
+        val fd = tunnel?.fileDescriptor ?: return
+        if (!running || packet == null) return
+        try {
+            Os.write(fd, packet)
+        } catch (e: ErrnoException) {
+            // If Android's receive queue is full, drop the reply so DNS can retry.
+            if (e.errno != OsConstants.EAGAIN) fail(e.message ?: "TUN write failed")
+        }
+    }
+
+    fun command(name: String) { if (!stopping) channel?.invokeMethod(name, null) }
+
+    private fun closeTunnel() {
+        running = false
+        main.removeCallbacks(startupTimeout)
+        // Closing the pipe's writer wakes the idle reader without periodic polling.
+        readerWake?.let { runCatching { it.close() } }
+        readerWake = null
+        tunnel?.let { runCatching { it.close() } }
+        tunnel = null
+        reader?.interrupt()
+        reader = null
+    }
+
+    private fun finishProtection(status: String, message: String? = null) {
+        if (stopping) return
+        stopping = true
+        closeTunnel()
+        ProtectionState.snapshot.put("logs", org.json.JSONArray())
+        ProtectionState.set(status, message)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    private fun fail(message: String) = finishProtection("error", message)
+    fun stopProtection() = finishProtection("stopped")
+    override fun onRevoke() {
+        main.post { finishProtection("stopped", "Android revoked VPN permission or another VPN replaced Zowy") }
+    }
+
     override fun onDestroy() {
-        running = false; main.removeCallbacks(startupTimeout)
+        val stoppedExplicitly = stopping
+        stopping = true
+        closeTunnel()
         if (watchingNetwork) {
             try { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
             watchingNetwork = false
         }
-        try { tunnel?.close() } catch (_: Exception) {}
-        try { input?.close() } catch (_: Exception) {}
-        try { output?.close() } catch (_: Exception) {}
-        reader?.interrupt(); reader = null
         channel?.invokeMethod("shutdown", null)
-        engine?.destroy(); engine = null; tunnel = null
-        instance = null
-        ProtectionState.snapshot.put("logs", org.json.JSONArray())
-        if (ProtectionState.status != "error") ProtectionState.set("stopped")
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        super.onDestroy()
+        channel?.setMethodCallHandler(null)
+        channel = null
+        try {
+            engine?.destroy()
+        } finally {
+            engine = null
+            instance = null
+            if (!stoppedExplicitly) {
+                ProtectionState.snapshot.put("logs", org.json.JSONArray())
+                ProtectionState.set("stopped")
+            }
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            super.onDestroy()
+        }
     }
 }

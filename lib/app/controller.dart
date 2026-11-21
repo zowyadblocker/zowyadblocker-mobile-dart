@@ -29,6 +29,9 @@ class AppController extends ChangeNotifier {
   String? error, notice;
   StreamSubscription<Map<String, dynamic>>? _events;
   bool get running => snapshot['status'] == 'running';
+  bool _stopping = false;
+  bool get canStopProtection => running || snapshot['status'] == 'starting';
+  bool get canToggleProtection => !_stopping && (!busy || canStopProtection);
   int count(String key) => (snapshot[key] as num?)?.toInt() ?? 0;
   Future<void> initialize() async {
     await run(() async {
@@ -102,10 +105,23 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> toggleProtection() => run(() async {
-    if (running || snapshot['status'] == 'starting') {
-      await platform.call<void>('stop');
-    } else {
+  Future<void> toggleProtection() async {
+    if (!canToggleProtection) return;
+    if (canStopProtection) {
+      _stopping = true;
+      error = notice = null;
+      notifyListeners();
+      try {
+        await platform.call<void>('stop');
+      } catch (e) {
+        error = e.toString();
+      } finally {
+        _stopping = false;
+        notifyListeners();
+      }
+      return;
+    }
+    await run(() async {
       if (engine.size == 0 && config.sources.any((s) => s.enabled)) {
         notice = 'Downloading filter lists before starting protection…';
         notifyListeners();
@@ -119,8 +135,9 @@ class AppController extends ChangeNotifier {
       }
       await platform.save(config);
       await platform.call<void>('start');
-    }
-  });
+    });
+  }
+
   Future<void> updateLists({bool force = true}) => run(() async {
     await _updateLists(force: force);
     notice =

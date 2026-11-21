@@ -6,7 +6,7 @@
 An Android-only Flutter application for local DNS ad/tracker filtering. AMOLED
 black, purple accents, no account, no analytics and no remote VPN server.
 
-**Status: functional development build (0.2.0), not the completed production
+**Status: functional development build (0.3.0), not the completed production
 specification.** The DNS VPN is implemented; official uBlock core is currently a
 tested desktop proof, root is an authorized diagnostic, and Shizuku supplies
 capability diagnostics. Unsupported modes are never presented as active protection.
@@ -74,9 +74,12 @@ and device checks are recorded in [verification](docs/VERIFICATION.md).
 5. If Android Private DNS or a browser's encrypted DNS is active, it may bypass
    local filtering. Zowy reports detected conflicts and leaves system settings
    under your control. Starting Zowy replaces another active VPN.
-6. Optional: configure Android **always-on VPN** from Settings. Leave **Block
-   connections without VPN** off: this is a DNS-only tunnel, so lockdown can break
-   ordinary traffic. Android/OEM battery restrictions still need device testing.
+6. Zowy runs as a foreground VPN service while protection is on, including when
+   you leave the app. Use the power button or the VPN notification to stop it.
+   Android **always-on VPN** can restart protection automatically, including after
+   a reboot. Leave **Block connections without VPN** off because Zowy routes DNS
+   only. If your phone drops the VPN while idle, use **Settings → Android battery
+   settings** to check Zowy’s battery restrictions.
 
 Only synthetic DNS destinations are routed through TUN. Ordinary internet traffic
 does not go through a third-party tunnel. There is no HTTPS interception. DNS

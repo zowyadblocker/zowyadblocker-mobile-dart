@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zowy_adblocker/core/config.dart';
 import 'package:zowy_adblocker/main.dart' as app;
 import 'package:zowy_adblocker/services/platform.dart';
@@ -87,6 +88,34 @@ void main() {
     final cleared =
         jsonDecode((await platform.call<String>('snapshot'))!) as Map;
     expect(cleared['logs'], isEmpty);
+    await tester.pumpAndSettle();
+    expect(find.text('DNS protection is active'), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(FilledButton),
+        matching: find.byIcon(Icons.shield),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Protection is off'), findsOneWidget);
+    expect(
+      jsonDecode((await platform.call<String>('snapshot'))!)['status'],
+      'stopped',
+    );
+
+    // The idle reader from the first tunnel must not interfere with a new one.
+    await tester.tap(find.byIcon(Icons.power_settings_new));
+    await tester.pump();
+    await tester.runAsync(() async {
+      for (var i = 0; i < 30; i++) {
+        state = jsonDecode(
+          (await platform.call<String>('snapshot'))!,
+        ) as Map<String, dynamic>;
+        if (state['status'] == 'running' || state['status'] == 'error') break;
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+    });
+    expect(state['status'], 'running', reason: state.toString());
     await platform.call<void>('stop');
     await tester.pumpAndSettle();
     expect(find.text('Protection is off'), findsOneWidget);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -106,10 +107,20 @@ void main() {
     },
   );
 
-  test('stopping protection does not download rules', () async {
+  test('stopping protection works while another action is pending', () async {
     controller.snapshot = {'status': 'running'};
-    await controller.toggleProtection();
-    expect(platform.calls.last, 'stop');
-    expect(lists.downloads, 0);
+    final pending = Completer<void>();
+    final action = controller.run(() => pending.future);
+    try {
+      expect(controller.busy, true);
+      expect(controller.canToggleProtection, true);
+      await controller.toggleProtection();
+      expect(platform.calls.last, 'stop');
+      expect(controller.busy, true);
+      expect(lists.downloads, 0);
+    } finally {
+      pending.complete();
+      await action;
+    }
   });
 }

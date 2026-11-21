@@ -243,7 +243,9 @@ class HomePage extends StatelessWidget {
       children: [
         Center(
           child: Semantics(
-            label: c.running ? 'Stop DNS protection' : 'Start DNS protection',
+            label: c.canStopProtection
+                ? 'Stop DNS protection'
+                : 'Start DNS protection',
             button: true,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
@@ -272,10 +274,10 @@ class HomePage extends StatelessWidget {
                         ? purple
                         : const Color(0xff21182f),
                   ),
-                  onPressed: c.busy
+                  onPressed: !c.canToggleProtection
                       ? null
                       : () async {
-                          if (!c.running &&
+                          if (!c.canStopProtection &&
                               c.capabilities['otherVpn'] == true) {
                             if (!await confirm(
                               context,
@@ -921,6 +923,16 @@ class SettingsPage extends StatelessWidget {
         ),
         onTap: () => c.run(() async {
           await c.platform.call<void>('vpnSettings');
+        }),
+      ),
+      ListTile(
+        leading: const Icon(Icons.battery_std_outlined),
+        title: const Text('Android battery settings'),
+        subtitle: const Text(
+          'Check Zowy’s battery restrictions if protection drops while the screen is off.',
+        ),
+        onTap: () => c.run(() async {
+          await c.platform.call<void>('batterySettings');
         }),
       ),
       heading('Filter updates'),
