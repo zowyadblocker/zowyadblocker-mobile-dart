@@ -1,7 +1,7 @@
 name: zowy_adblocker
 description: Local-first Android DNS protection with transparent capabilities.
 publish_to: none
-version: 0.3.0+3
+version: 0.4.0+4
 environment:
   sdk: ^3.14.0
 dependencies:

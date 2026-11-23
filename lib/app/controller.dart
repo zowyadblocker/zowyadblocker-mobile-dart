@@ -180,18 +180,37 @@ class AppController extends ChangeNotifier {
         .map((a) => Map<String, dynamic>.from(a as Map))
         .toList();
   });
-  Future<void> temporaryAllow(String domain, int minutes) => run(() async {
-    final value = domain.trim().toLowerCase();
+  String normalizeDomain(String domain) {
+    final value = domain.trim().toLowerCase().replaceFirst(RegExp(r'\.$'), '');
     if (!validDomain(value)) {
-      throw const FormatException('Enter a valid ASCII domain.');
+      throw const FormatException('Enter a domain, such as example.com.');
     }
-    config.temporaryAllows[value] = minutes == 0
+    return value;
+  }
+
+  RuleMatch? inspectDomain(String domain) =>
+      engine.match(normalizeDomain(domain), temporary: config.temporaryAllows);
+
+  Future<void> temporaryAllow(String domain, int minutes) => run(() async {
+    final value = normalizeDomain(domain);
+    final next = AppConfig.decode(config.encode());
+    next.temporaryAllows[value] = minutes == 0
         ? 0
         : DateTime.now().add(Duration(minutes: minutes)).millisecondsSinceEpoch;
-    await save();
+    await platform.save(next);
+    config = next;
     notice =
         '$value is allowed ${minutes == 0 ? 'until removed' : 'for $minutes minutes'}.';
   });
+
+  Future<void> removeTemporaryAllow(String domain) => run(() async {
+    final next = AppConfig.decode(config.encode());
+    next.temporaryAllows.remove(normalizeDomain(domain));
+    await platform.save(next);
+    config = next;
+    notice = 'Temporary exception removed.';
+  });
+
   Future<void> export(String name, String text) => run(() async {
     final saved = await platform.call<bool>('export', {
       'name': name,

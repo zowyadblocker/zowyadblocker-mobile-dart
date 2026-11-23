@@ -31,6 +31,7 @@ object ProtectionState {
     var sink: EventChannel.EventSink? = null
     fun json(): String = JSONObject(snapshot.toString()).apply {
         put("status", status); put("serviceError", error ?: JSONObject.NULL)
+        put("alwaysOn", DnsVpnService.instance?.isAlwaysOn == true)
     }.toString()
     fun emit(capabilitiesChanged: Boolean = false) {
         sink?.success(if (capabilitiesChanged) JSONObject(json()).put("capabilitiesChanged", true).toString() else json())

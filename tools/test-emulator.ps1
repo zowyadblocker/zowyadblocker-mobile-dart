@@ -23,6 +23,10 @@ $job = Start-Job -ScriptBlock {
 } -ArgumentList $project, $log, $Serial
 $authorized = $false
 $probed = $false
+$pending = [ordered]@{
+    ZOWY_TEMP_ALLOW_READY = 'temporary-allow'
+    ZOWY_TEMP_UNDO_READY = 'temporary-undo'
+}
 $deadline = (Get-Date).AddMinutes(6)
 try {
     while ((Get-Date) -lt $deadline -and $job.State -eq 'Running') {
@@ -41,12 +45,18 @@ try {
             if ($probeExit -ne 0) { Get-Content -LiteralPath $log; throw 'Independent DNS probe failed.' }
             $probed = $true
         }
+        foreach ($marker in @($pending.Keys)) {
+            if ($content -match $marker) {
+                & $adb -s $Serial shell /data/local/tmp/zowy-dns-probe $pending[$marker]
+                if ($LASTEXITCODE -eq 0) { $pending.Remove($marker) }
+            }
+        }
         Start-Sleep -Seconds 1
     }
     Get-Content -LiteralPath $log
     if ($job.State -eq 'Running') { throw 'Integration test timed out.' }
     $exitCode = Receive-Job $job
-    if ($exitCode -ne 0 -or !$probed) { throw 'Integration test did not pass all probes.' }
+    if ($exitCode -ne 0 -or !$probed -or $pending.Count -ne 0) { throw 'Integration test did not pass all probes.' }
 } finally {
     if ($job.State -eq 'Running') { Stop-Job $job }
     Remove-Job $job

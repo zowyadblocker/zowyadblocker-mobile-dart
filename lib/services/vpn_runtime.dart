@@ -66,7 +66,9 @@ class VpnRuntime {
       totalMicros = 0;
   final logs = <Map<String, dynamic>>[];
   final days = <String, int>{};
-  String? lastError;
+  String? lastError, _lastResolverFailure;
+  DateTime? _lastTunnelQuery, _lastResolverReply;
+  int _reloadGeneration = 0;
   Timer? _publishTimer;
   bool closing = false;
   late TcpDnsServer tcp;
@@ -95,9 +97,8 @@ class VpnRuntime {
           cache.clear();
           publish();
         case 'networkChanged':
-          resolver.close();
-          resolver = DnsResolver(config.upstream);
-          cache.clear();
+          _resetResolver(config);
+          publish();
         case 'resetStats':
           blocked = allowed = errors = cacheHits = totalMicros = 0;
           days.clear();
@@ -148,25 +149,39 @@ class VpnRuntime {
   }
 
   Future<void> reload() async {
+    final generation = ++_reloadGeneration;
     final next = AppConfig.decode(
       (await runtimeChannel.invokeMethod<String>('loadConfig'))!,
     );
     final compiled = await lists.compile(next);
-    final nextResolver = DnsResolver(next.upstream);
-    // Build replacement state before swapping; failed compilation keeps the old engine.
-    if (_initialized) resolver.close();
+    if (closing || generation != _reloadGeneration) return;
+    // Swap only after compilation succeeds, keeping the last working rules on error.
+    if (!_initialized ||
+        jsonEncode(config.upstream) != jsonEncode(next.upstream)) {
+      _resetResolver(next);
+    } else if (config.cacheSize != next.cacheSize) {
+      cache = DnsCache(next.cacheSize);
+    }
     config = next;
     engine = compiled;
-    resolver = nextResolver;
-    cache = DnsCache(config.cacheSize);
     if (!config.logging) logs.clear();
     _initialized = true;
   }
 
   bool _initialized = false;
+  void _resetResolver(AppConfig next) {
+    if (_initialized) resolver.close();
+    resolver = DnsResolver(next.upstream);
+    cache = DnsCache(next.cacheSize);
+    _lastResolverReply = null;
+    _lastResolverFailure = null;
+  }
 
   Future<Uint8List> process(Uint8List query, {bool tcpRequest = false}) async {
     final question = DnsQuestion.parse(query);
+    _lastTunnelQuery = DateTime.now();
+    final activeResolver = resolver;
+    final activeCache = cache;
     final watch = Stopwatch()..start();
     final match = engine.match(
       question.name,
@@ -186,11 +201,20 @@ class VpnRuntime {
           days.remove(days.keys.first);
         }
       } else {
-        final cached = cache.get(query);
+        final cached = activeCache.get(query);
         hit = cached != null;
         if (hit) cacheHits++;
-        response = cached ?? await resolver.resolve(query);
-        if (!hit) cache.put(query, response);
+        response = cached ?? await activeResolver.resolve(query);
+        if (!hit && identical(activeResolver, resolver)) {
+          final rcode = response[3] & 15;
+          if (rcode == 0 || rcode == 3) {
+            _lastResolverReply = DateTime.now();
+            _lastResolverFailure = null;
+          } else {
+            _lastResolverFailure = 'DNS response code $rcode';
+          }
+          if (identical(activeCache, cache)) activeCache.put(query, response);
+        }
         allowed++;
       }
       // Fit under the IPv6 minimum MTU and let resolvers retry large answers via TCP.
@@ -202,6 +226,11 @@ class VpnRuntime {
       errors++;
       error = e.toString();
       lastError = error;
+      if (identical(activeResolver, resolver)) {
+        _lastResolverFailure = e is TimeoutException
+            ? 'The resolver timed out'
+            : 'The resolver could not be reached or returned an invalid reply';
+      }
     }
     watch.stop();
     totalMicros += watch.elapsedMicroseconds;
@@ -247,6 +276,9 @@ class VpnRuntime {
           'logs': logs,
           'days': days,
           'lastError': lastError,
+          'lastTunnelQuery': _lastTunnelQuery?.toUtc().toIso8601String(),
+          'lastResolverReply': _lastResolverReply?.toUtc().toIso8601String(),
+          'lastResolverFailure': _lastResolverFailure,
         }),
       ),
     );

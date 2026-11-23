@@ -11,6 +11,7 @@ class _Platform extends AndroidPlatform {
   _Platform(this.path);
   final Directory path;
   final calls = <String>[];
+  bool failSave = false;
   @override
   Future<Directory> directory() async => path;
   @override
@@ -18,6 +19,9 @@ class _Platform extends AndroidPlatform {
   @override
   Future<T?> call<T>(String method, [Object? args]) async {
     calls.add(method);
+    if (method == 'saveConfig' && failSave) {
+      throw const FileSystemException('Settings could not be saved');
+    }
     return (method == 'capabilities' ? <String, dynamic>{} : null) as T?;
   }
 }
@@ -104,6 +108,36 @@ void main() {
       expect(lists.downloads, 0);
       expect(platform.calls, isNot(contains('start')));
       expect(controller.error, contains('add custom rules'));
+    },
+  );
+
+  test(
+    'domain checks explain rules and can undo an exception without logs',
+    () async {
+      controller.config.userRules = '||ads.example.com^';
+      await controller.reloadLists();
+      expect(controller.config.logging, false);
+      expect(
+        controller.inspectDomain(' ADS.example.COM. ')?.source,
+        'My rules',
+      );
+      expect(
+        () => controller.inspectDomain('https://ads.example.com'),
+        throwsFormatException,
+      );
+      expect(controller.inspectDomain('ads.example.com')?.allow, false);
+
+      platform.failSave = true;
+      await controller.temporaryAllow('ads.example.com', 30);
+      expect(controller.error, contains('could not be saved'));
+      expect(controller.inspectDomain('ads.example.com')?.allow, false);
+
+      platform.failSave = false;
+      await controller.temporaryAllow('ads.example.com', 30);
+      expect(controller.inspectDomain('ads.example.com')?.allow, true);
+      expect(controller.inspectDomain('sub.ads.example.com')?.allow, true);
+      await controller.removeTemporaryAllow('ads.example.com');
+      expect(controller.inspectDomain('ads.example.com')?.allow, false);
     },
   );
 

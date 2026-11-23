@@ -17,7 +17,11 @@ void main() {
       AppConfig(sources: [], userRules: '||previous.zowy.test^'),
     );
     await platform.save(
-      AppConfig(sources: [], userRules: '||blocked.zowy.test^', logging: true),
+      AppConfig(
+        sources: [],
+        userRules: '||blocked.zowy.test^\n||example.org^',
+        logging: true,
+      ),
     );
     await platform.save(await platform.load());
     final backup = AppConfig.decode(
@@ -81,6 +85,64 @@ void main() {
     );
     expect(fixtures.length, greaterThanOrEqualTo(8));
     expect(fixtures.where((e) => e['error'] != null), isEmpty);
+    expect(state['lastTunnelQuery'], isA<String>());
+    expect(state['lastResolverReply'], isA<String>());
+    expect(state['lastResolverFailure'], isNull);
+    expect(state['alwaysOn'], false);
+
+    Future<Map> waitForRuleDecision(bool blocked) async {
+      Map? decision;
+      await tester.runAsync(() async {
+        for (var i = 0; i < 30; i++) {
+          final snapshot =
+              jsonDecode((await platform.call<String>('snapshot'))!) as Map;
+          final events = (snapshot['logs'] as List).cast<Map>();
+          if (events.any(
+            (e) => e['domain'] == 'example.org' && e['blocked'] == blocked,
+          )) {
+            decision = events.firstWhere(
+              (e) => e['domain'] == 'example.org' && e['blocked'] == blocked,
+            );
+            return;
+          }
+          await Future<void>.delayed(const Duration(seconds: 1));
+        }
+      });
+      expect(decision, isNotNull);
+      return decision!;
+    }
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Activity'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Check a domain'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      ),
+      'EXAMPLE.ORG.',
+    );
+    await tester.tap(find.text('Check'));
+    await tester.pumpAndSettle();
+    expect(find.text('Blocked by My rules'), findsOneWidget);
+    await tester.tap(find.text('Allow for 30 minutes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Allowed by Temporary allowlist'), findsOneWidget);
+    // ignore: avoid_print
+    print('ZOWY_TEMP_ALLOW_READY');
+    expect((await waitForRuleDecision(false))['source'], 'Temporary allowlist');
+    await tester.tap(find.text('Undo temporary allow'));
+    await tester.pumpAndSettle();
+    expect(find.text('Blocked by My rules'), findsOneWidget);
+    // ignore: avoid_print
+    print('ZOWY_TEMP_UNDO_READY');
+    expect((await waitForRuleDecision(true))['source'], 'My rules');
+    Navigator.of(tester.element(find.text('Current configured rules'))).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NavigationDestination, 'Protect'));
+    await tester.pumpAndSettle();
     await platform.call<void>('clearLogs');
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(seconds: 1)),
@@ -89,7 +151,7 @@ void main() {
         jsonDecode((await platform.call<String>('snapshot'))!) as Map;
     expect(cleared['logs'], isEmpty);
     await tester.pumpAndSettle();
-    expect(find.text('DNS protection is active'), findsOneWidget);
+    expect(find.text('VPN tunnel is up'), findsOneWidget);
     await tester.tap(
       find.descendant(
         of: find.byType(FilledButton),

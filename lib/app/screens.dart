@@ -302,7 +302,7 @@ class HomePage extends StatelessWidget {
         Center(
           child: Text(
             c.running
-                ? 'DNS protection is active'
+                ? 'VPN tunnel is up'
                 : c.snapshot['status'] == 'starting'
                 ? 'Starting protection…'
                 : 'Protection is off',
@@ -317,6 +317,7 @@ class HomePage extends StatelessWidget {
             text: 'Android Private DNS is active. It may bypass local DNS filtering. Check Network settings before relying on protection.',
             error: true,
           ),
+        if (c.running) ...[ProtectionHealth(c: c), gap()],
         if (c.engine.size == 0)
           Panel(
             children: [
@@ -437,6 +438,153 @@ class HomePage extends StatelessWidget {
   );
 }
 
+class ProtectionHealth extends StatelessWidget {
+  const ProtectionHealth({required this.c, super.key});
+  final AppController c;
+
+  @override
+  Widget build(BuildContext context) {
+    final format = MaterialLocalizations.of(context);
+    String? timestamp(String key) {
+      final raw = c.snapshot[key] as String?;
+      final time = raw == null ? null : DateTime.tryParse(raw)?.toLocal();
+      if (time == null) return null;
+      return '${format.formatShortDate(time)} at ${format.formatTimeOfDay(TimeOfDay.fromDateTime(time))}';
+    }
+
+    final query = timestamp('lastTunnelQuery');
+    final reply = timestamp('lastResolverReply');
+    final failure = c.snapshot['lastResolverFailure'] as String?;
+    return Panel(
+      children: [
+        heading('Protection health'),
+        const Text('DNS through Zowy'),
+        muted(
+          query == null
+              ? 'Waiting for a DNS request. Open a site in another app to check.'
+              : 'Last request: $query',
+        ),
+        const SizedBox(height: 12),
+        const Text('Upstream resolver'),
+        if (failure != null) ...[
+          Text(failure, style: const TextStyle(color: Color(0xffffb4ab))),
+          if (reply != null) muted('Last successful reply: $reply'),
+          TextButton(
+            onPressed: c.busy ? null : c.testResolver,
+            child: const Text('Test resolver'),
+          ),
+        ] else
+          muted(
+            reply == null
+                ? 'Waiting for an uncached request on this connection.'
+                : 'Last successful reply: $reply',
+          ),
+        if (c.snapshot['alwaysOn'] == true)
+          TextButton(
+            onPressed: c.busy
+                ? null
+                : () => c.run(() async {
+                    await c.platform.call<void>('vpnSettings');
+                  }),
+            child: const Text('Android always-on VPN is enabled'),
+          ),
+      ],
+    );
+  }
+}
+
+Future<void> _checkDomain(BuildContext context, AppController c) async {
+  final entered = await editText(
+    context,
+    'Check a domain',
+    '',
+    submit: 'Check',
+  );
+  if (entered == null || !context.mounted) return;
+  try {
+    final domain = c.normalizeDomain(entered);
+    await _showDomainDetails(context, c, domain);
+  } on FormatException catch (e) {
+    await c.run(() async => throw e);
+  }
+}
+
+Future<void> _showDomainDetails(
+  BuildContext context,
+  AppController c,
+  String domain, {
+  Map? event,
+}) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  builder: (_) => SafeArea(
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: ListenableBuilder(
+        listenable: c,
+        builder: (_, _) {
+          final supported = validDomain(domain);
+          final match = supported ? c.inspectDomain(domain) : null;
+          final expiry = c.config.temporaryAllows[domain];
+          final hasException =
+              expiry != null &&
+              (expiry == 0 || expiry > DateTime.now().millisecondsSinceEpoch);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              heading(domain),
+              if (event != null) ...[
+                Text(
+                  event['blocked'] == true
+                      ? 'Blocked at the time of this request'
+                      : event['error'] != null
+                      ? 'DNS request failed'
+                      : 'Passed through Zowy',
+                ),
+                if (event['source'] is String)
+                  muted('Source: ${event['source']}'),
+                if (event['rule'] is String)
+                  SelectableText(event['rule'] as String),
+                if (event['error'] is String) muted(event['error'] as String),
+                gap(),
+              ],
+              if (supported) ...[
+                const Text('Current configured rules'),
+                muted(
+                  match == null
+                      ? 'No matching block rule.'
+                      : match.allow
+                      ? 'Allowed by ${match.source}'
+                      : 'Blocked by ${match.source}',
+                ),
+                if (match != null) SelectableText(match.rule),
+                if (c.error != null) Message(text: c.error!, error: true),
+                if (hasException)
+                  TextButton(
+                    onPressed: c.busy
+                        ? null
+                        : () => c.removeTemporaryAllow(domain),
+                    child: const Text('Undo temporary allow'),
+                  )
+                else if (match?.allow == false) ...[
+                  muted('This exception also allows subdomains.'),
+                  FilledButton(
+                    onPressed: c.busy
+                        ? null
+                        : () => c.temporaryAllow(domain, 30),
+                    child: const Text('Allow for 30 minutes'),
+                  ),
+                ],
+              ],
+            ],
+          );
+        },
+      ),
+    ),
+  ),
+);
+
 class ActivityPage extends StatefulWidget {
   const ActivityPage({required this.c, super.key});
   final AppController c;
@@ -476,6 +624,11 @@ class _ActivityPageState extends State<ActivityPage> {
                   c.config.logging = v;
                   await c.save();
                 }),
+        ),
+        TextButton.icon(
+          onPressed: c.busy ? null : () => _checkDomain(context, c),
+          icon: const Icon(Icons.rule),
+          label: const Text('Check a domain'),
         ),
         TextField(
           decoration: const InputDecoration(
@@ -542,34 +695,11 @@ class _ActivityPageState extends State<ActivityPage> {
                 '${e['time']}\n${e['application']} · ${e['ms']} ms',
               ),
               isThreeLine: true,
-              onTap: () => showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                builder: (_) => SafeArea(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        heading(e['domain'].toString()),
-                        SelectableText(
-                          const JsonEncoder.withIndent('  ').convert(e),
-                        ),
-                        gap(),
-                        FilledButton(
-                          onPressed: c.busy
-                              ? null
-                              : () {
-                                  Navigator.pop(context);
-                                  c.temporaryAllow(e['domain'].toString(), 30);
-                                },
-                          child: const Text('Allow this domain for 30 minutes'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              onTap: () => _showDomainDetails(
+                context,
+                c,
+                e['domain'].toString(),
+                event: e,
               ),
             ),
           ),
@@ -720,6 +850,11 @@ class FiltersPage extends StatelessWidget {
         children: [
           heading('Temporary allowlist'),
           TextButton.icon(
+            onPressed: c.busy ? null : () => _checkDomain(context, c),
+            icon: const Icon(Icons.rule),
+            label: const Text('Check a domain'),
+          ),
+          TextButton.icon(
             onPressed: c.busy
                 ? null
                 : () async {
@@ -745,12 +880,7 @@ class FiltersPage extends StatelessWidget {
               trailing: IconButton(
                 tooltip: 'Remove exception',
                 icon: const Icon(Icons.close),
-                onPressed: c.busy
-                    ? null
-                    : () => c.run(() async {
-                        c.config.temporaryAllows.remove(e.key);
-                        await c.save();
-                      }),
+                onPressed: c.busy ? null : () => c.removeTemporaryAllow(e.key),
               ),
             ),
           ),
@@ -1339,6 +1469,7 @@ Future<String?> editText(
   String title,
   String initial, {
   bool multiline = false,
+  String submit = 'Save',
 }) async {
   final controller = TextEditingController(text: initial);
   final value = await showDialog<String>(
@@ -1366,7 +1497,7 @@ Future<String?> editText(
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, controller.text),
-          child: const Text('Save'),
+          child: Text(submit),
         ),
       ],
     ),

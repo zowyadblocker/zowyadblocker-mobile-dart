@@ -47,7 +47,16 @@ static void probe(int v6, int tcp, const char *name, int expected) {
     printf("PASS IPv%d %s %s RCODE=%d bytes=%d\n", v6 ? 6 : 4, tcp ? "TCP" : "UDP", name, expected, got);
     close(fd);
 }
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc == 2 && !strcmp(argv[1], "temporary-allow")) {
+        probe(0, 0, "example.org", 0);
+        return 0;
+    }
+    if (argc == 2 && !strcmp(argv[1], "temporary-undo")) {
+        probe(0, 0, "example.org", 3);
+        return 0;
+    }
+    if (argc != 1) return 2;
     for (int v6 = 0; v6 <= 1; v6++) for (int tcp = 0; tcp <= 1; tcp++) {
         probe(v6, tcp, "blocked.zowy.test", 3);
         probe(v6, tcp, "example.com", 0);

@@ -12,6 +12,6 @@ If the link does not open Obtainium, add Zowy from inside the app:
 
 You can also download the [JSON import file](https://raw.githubusercontent.com/zowyadblocker/zowyadblocker-mobile-dart/main/.github/obtainium.json) and import it from Obtainium's **Import/Export** screen.
 
-If you installed an ABI-specific APK, keep using that variant to update in place. Set the filter to match its filename instead, such as `arm64.*[.]apk$` for arm64. The 0.1.0 through 0.3.0 development APKs share a signing certificate.
+If you installed an ABI-specific APK, keep using that variant to update in place. Set the filter to match its filename instead, such as `arm64.*[.]apk$` for arm64. The 0.1.0 through 0.4.0 development APKs share a signing certificate.
 
 [Download from GitHub](https://github.com/zowyadblocker/zowyadblocker-mobile-dart/releases/latest) · [Obtainium deep-link documentation](https://wiki.obtainium.imranr.dev/deep_links/)
